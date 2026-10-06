@@ -1,122 +1,172 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { useRef, useState } from "react";
+
+import ChatWindow from "./components/ChatWindow";
+import Header from "./components/Header";
+import StatusIndicator from "./components/StatusIndicator";
+import TextInput from "./components/TextInput";
+import VoiceButton from "./components/VoiceButton";
+import { generateSpeech, sendMessage } from "./services/assistantApi";
+
+const initialMessages = [];
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [messages, setMessages] = useState(initialMessages);
+  const [textInput, setTextInput] = useState("");
+  const [status, setStatus] = useState("idle");
+  const [errorMessage, setErrorMessage] = useState("");
+  const recognitionRef = useRef(null);
+  const audioRef = useRef(null);
+
+  const stopPlayback = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current = null;
+    }
+  };
+
+  const appendMessage = (role, content) => {
+    setMessages((current) => [...current, { role, content }]);
+  };
+
+  const handleSendMessage = async (trimmedText) => {
+    if (!trimmedText) {
+      return;
+    }
+
+    stopPlayback();
+    setErrorMessage("");
+    setStatus("processing");
+    appendMessage("user", trimmedText);
+    setTextInput("");
+
+    try {
+      const data = await sendMessage(trimmedText);
+      const assistantText = data.response || "Sorry, I couldn't generate a response.";
+      appendMessage("assistant", assistantText);
+      setStatus("speaking");
+
+      const audioBlob = await generateSpeech(assistantText);
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+      audioRef.current = audio;
+
+      audio.onended = () => {
+        URL.revokeObjectURL(audioUrl);
+        setStatus("idle");
+      };
+
+      audio.onerror = () => {
+        URL.revokeObjectURL(audioUrl);
+        setErrorMessage("Voice playback is currently unavailable.");
+        setStatus("error");
+      };
+
+      await audio.play();
+    } catch (error) {
+      console.error(error);
+      setErrorMessage(error.message || "Sorry, I couldn't generate a response.");
+      setStatus("error");
+    }
+  };
+
+  const startListening = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setErrorMessage("Speech recognition is not supported in this browser.");
+      setStatus("error");
+      return;
+    }
+
+    if (status === "processing" || status === "speaking") {
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-US";
+    recognition.interimResults = false;
+    recognition.continuous = false;
+
+    recognition.onstart = () => {
+      setErrorMessage("");
+      setStatus("listening");
+    };
+
+    recognition.onresult = async (event) => {
+      const transcript = event.results[0][0].transcript.trim();
+      if (transcript) {
+        await handleSendMessage(transcript);
+      }
+    };
+
+    recognition.onerror = (event) => {
+      if (event.error === "not-allowed" || event.error === "permission-denied") {
+        setErrorMessage("Microphone access was denied.");
+      } else {
+        setErrorMessage("Sorry, I couldn't access the microphone.");
+      }
+      setStatus("error");
+    };
+
+    recognition.onend = () => {
+      if (status !== "processing" && status !== "speaking") {
+        setStatus("idle");
+      }
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    const trimmedText = textInput.trim();
+    await handleSendMessage(trimmedText);
+  };
+
+  const handleClearConversation = () => {
+    stopPlayback();
+    setMessages(initialMessages);
+    setTextInput("");
+    setStatus("idle");
+    setErrorMessage("");
+  };
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <div className="app-shell">
+      <Header />
 
-      <div className="ticks"></div>
+      <div className="assistant-panel">
+        <ChatWindow messages={messages} />
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+        <div className="controls-area">
+          <StatusIndicator status={status} />
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+          <div className="controls-row">
+            <VoiceButton
+              status={status}
+              onClick={startListening}
+              disabled={status === "processing" || status === "speaking"}
+            />
+
+            <button type="button" className="secondary-button" onClick={handleClearConversation}>
+              Clear conversation
+            </button>
+          </div>
+
+          <TextInput
+            value={textInput}
+            onChange={(event) => setTextInput(event.target.value)}
+            onSubmit={handleSubmit}
+            disabled={status === "processing" || status === "speaking"}
+          />
+        </div>
+      </div>
+
+      {errorMessage && <p className="error-banner">{errorMessage}</p>}
+    </div>
+  );
 }
 
-export default App
+export default App;
