@@ -18,11 +18,29 @@ function App() {
   const audioRef = useRef(null);
 
   const stopPlayback = () => {
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
       audioRef.current = null;
     }
+  };
+
+  const speakInBrowser = (text) => {
+    if (!("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) {
+      throw new Error("Voice playback is unavailable in this browser.");
+    }
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.onend = () => setStatus("idle");
+    utterance.onerror = () => {
+      setErrorMessage("Voice playback is currently unavailable.");
+      setStatus("error");
+    };
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
   };
 
   const appendMessage = (role, content) => {
@@ -41,28 +59,54 @@ function App() {
     setTextInput("");
 
     try {
-      const data = await sendMessage(trimmedText);
+      const history = messages.map(({ role, content }) => ({ role, content }));
+      const data = await sendMessage(trimmedText, history);
       const assistantText = data.response || "Sorry, I couldn't generate a response.";
       appendMessage("assistant", assistantText);
       setStatus("speaking");
 
-      const audioBlob = await generateSpeech(assistantText);
-      const audioUrl = URL.createObjectURL(audioBlob);
-      const audio = new Audio(audioUrl);
-      audioRef.current = audio;
-
-      audio.onended = () => {
-        URL.revokeObjectURL(audioUrl);
-        setStatus("idle");
+      let browserFallbackStarted = false;
+      const fallbackToBrowserSpeech = () => {
+        if (browserFallbackStarted) {
+          return;
+        }
+        browserFallbackStarted = true;
+        try {
+          speakInBrowser(assistantText);
+        } catch {
+          setErrorMessage("I answered in text, but voice playback is unavailable.");
+          setStatus("idle");
+        }
       };
 
-      audio.onerror = () => {
-        URL.revokeObjectURL(audioUrl);
-        setErrorMessage("Voice playback is currently unavailable.");
-        setStatus("error");
-      };
+      let audioUrl;
+      try {
+        const audioBlob = await generateSpeech(assistantText);
+        audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        audioRef.current = audio;
 
-      await audio.play();
+        audio.onended = () => {
+          URL.revokeObjectURL(audioUrl);
+          audioUrl = null;
+          setStatus("idle");
+        };
+
+        audio.onerror = () => {
+          if (audioUrl) {
+            URL.revokeObjectURL(audioUrl);
+            audioUrl = null;
+          }
+          fallbackToBrowserSpeech();
+        };
+
+        await audio.play();
+      } catch {
+        if (audioUrl) {
+          URL.revokeObjectURL(audioUrl);
+        }
+        fallbackToBrowserSpeech();
+      }
     } catch (error) {
       console.error(error);
       setErrorMessage(error.message || "Sorry, I couldn't generate a response.");
