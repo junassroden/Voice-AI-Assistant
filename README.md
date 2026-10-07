@@ -1,13 +1,13 @@
 # Voice AI Assistant
 
-A full-stack voice-enabled AI assistant built with React, Django REST Framework, Python, an LLM API, and ElevenLabs.
+A full-stack voice-enabled AI assistant built with React, Django REST Framework, Python, Groq-hosted GPT-OSS, and optional ElevenLabs speech.
 
 ## Features
 
 - Voice input via the browser Speech Recognition API
 - Speech-to-text conversion
-- AI conversational responses powered by an LLM
-- Text-to-speech via ElevenLabs
+- AI conversational responses powered by the open-weight GPT-OSS model through Groq
+- Text-to-speech via ElevenLabs, with browser speech as a fallback
 - Conversation history in the client UI
 - Typed message input support
 - Responsive, portfolio-friendly interface
@@ -21,7 +21,7 @@ React frontend
 ↓
 Django REST API
 ↓
-LLM provider
+Groq-hosted GPT-OSS
 ↓
 ElevenLabs TTS
 ↓
@@ -44,8 +44,8 @@ Audio playback
 - django-cors-headers
 
 ### AI / Voice
-- LLM API
-- ElevenLabs API
+- Groq API (OpenAI-compatible API for the GPT-OSS model)
+- Optional ElevenLabs API (browser speech is used if it is unavailable)
 
 ## Local Setup
 
@@ -77,15 +77,15 @@ The backend will run at:
 
 ## Environment Variables
 
-Create `backend/.env` and add values like:
+Create a free Groq API key, then set the Groq key, model, and API URL in `backend/.env` as shown below. The template is in `backend/.env.example`:
 
 ```env
 SECRET_KEY=your_django_secret_key
 DEBUG=True
 
-LLM_API_KEY=your_llm_api_key
-LLM_MODEL=gpt-4o-mini
-LLM_API_BASE_URL=https://api.openai.com/v1
+GROQ_API_KEY=your_groq_api_key
+LLM_MODEL=openai/gpt-oss-120b
+LLM_API_BASE_URL=https://api.groq.com/openai/v1
 
 ELEVENLABS_API_KEY=your_elevenlabs_api_key
 ELEVENLABS_VOICE_ID=your_voice_id
@@ -104,4 +104,6 @@ Do not commit `.env` or any real API keys to version control.
 
 - Secret keys are stored only on the Django backend.
 - The frontend communicates only with the Django API.
-- The app keeps the conversation in browser state for the initial implementation.
+- Recent conversation turns are sent with each message so the model can respond in context.
+- If ElevenLabs is not configured or unavailable, supported browsers speak the response locally.
+- The AI endpoint requires a Groq API key. Without one, the backend returns a clear setup error rather than echoing the user's message.
