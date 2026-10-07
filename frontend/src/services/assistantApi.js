@@ -23,13 +23,13 @@ async function request(url, options = {}, isAudio = false) {
   return response.json();
 }
 
-export async function sendMessage(message) {
+export async function sendMessage(message, history = []) {
   return request(`${API_BASE_URL}/chat/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, history }),
   });
 }
 
